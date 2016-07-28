@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>bubbles</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>body {padding:0;margin:0;overflow:hidden;}</style>
+	</head>
+
+	<body>
+		<script src="js/three.min.js"></script>
+
+		<script>
+			var width = window.innerWidth;
+			var height = window.innerHeight;			
+			var gravity = { x: 0.2, y: 0.2 };
+			var mouse = new THREE.Vector2(-1000,-1000), INTERSECTED;
+			var camera, scene, raycaster, renderer;
+			var group, background;
+			var mousedown = false;
+			var mouse0 = { x: 0, y: 0, t:0 };
+			var force = false;
+			var amount = 12;
+
+			init();
+			animate();
+
+			function init() {
+				camera = new THREE.PerspectiveCamera( 60, width / height, 1, 2100 );
+				camera.position.z = 1500;
+
+				scene = new THREE.Scene();
+				scene.fog = new THREE.Fog( 0xffffff, 1500, 2100 );
+
+				drawCircle = function(ctx, x, y, r, blur){
+					ctx.shadowColor = "#ff3366";
+					ctx.lineWidth = 0;
+					ctx.fillStyle = "#ff3366";
+					ctx.shadowBlur = blur;
+					ctx.arc(x, y, r, 0, Math.PI * 2, false);
+					ctx.fill();
+				};
+
+				var bitmap = document.createElement('canvas');
+				bitmap.width = 256;
+				bitmap.height = 256;
+				var ctx = bitmap.getContext('2d');
+				drawCircle(ctx, 128, 128, 124, 6);
+				ctx.fillStyle = "#ffffff";
+				ctx.font = 36 + "px consolas, Monaco, monospace";
+				ctx.fillText("foo bar", 40, 128, 1024);
+
+				var map = new THREE.Texture(bitmap) 
+				map.needsUpdate = true;
+
+				background = new THREE.Mesh( new THREE.PlaneGeometry( 10000, 10000) );
+				background.position.set( 0, 0, -1 );
+
+				group = new THREE.Group();
+				for ( var a = 0; a < amount; a ++ ) {
+					var x = 500 * (Math.random() - 0.5);
+					var y = 500 * (Math.random() - 0.5);
+					var z = 0;
+					
+					var material = new THREE.SpriteMaterial( { map: map, color: 0xffffff, fog: true } );
+					var sprite = new THREE.Sprite( material );
+					
+					sprite.position.set( x, y, z );
+					sprite.radius = 100 + 100 * Math.random();
+					sprite.velocity = { x: 0, y: 0 };
+					sprite.scale.set( sprite.radius * 2, sprite.radius * 2, 1.0 );
+
+					group.add( sprite );
+				}
+
+				scene.add( group );
+
+				raycaster = new THREE.Raycaster();
+
+				renderer = new THREE.WebGLRenderer();
+				renderer.setClearColor( 0xffffff );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+				document.body.appendChild( renderer.domElement );
+				document.addEventListener( 'mousedown', onDocumentMouseDown, false );
+				document.addEventListener( 'mousemove', onDocumentMouseMove, false );
+				document.addEventListener( 'mouseup', onDocumentMouseUp, false );
+				document.addEventListener( 'touchstart', onDocumentMouseDown, false );
+				document.addEventListener( 'touchmove', onDocumentMouseMove, false );
+				document.addEventListener( 'touchend', onDocumentMouseUp, false );
+				window.addEventListener( 'resize', onWindowResize, false );
+			}
+
+			function onWindowResize() {
+				width = window.innerWidth;
+				height = window.innerHeight;
+				camera.aspect = width / height;
+				camera.updateProjectionMatrix();
+				renderer.setSize( width, height );
+			}
+
+			function getMousexy(e) {
+				var touches = event.changedTouches;
+				if (touches) {
+					event.preventDefault();
+					return { x: touches[0].pageX, y: touches[0].pageY };
+				} else {
+					return { x: event.clientX, y: event.clientY };
+				}
+			}
+
+			function onDocumentMouseDown( event ) {
+				var mxy = getMousexy(event);
+				mouse0.x = ( mxy.x / width ) * 2 - 1;
+				mouse0.y = - ( mxy.y / height ) * 2 + 1;
+				mouse0.t = Date.now();
+				mousedown = true;
+			}
+			
+			function onDocumentMouseUp( event ) {
+				getMousexy(event);
+				mousedown = false;
+				force = false;
+			}
+
+			function onDocumentMouseMove( event ) {
+				var mxy = getMousexy(event);
+				mouse.x = ( mxy.x / width ) * 2 - 1;
+				mouse.y = - ( mxy.y / height ) * 2 + 1;
+				
+				if (mousedown) {
+					force = true;
+					if (Date.now() - mouse0.t > 500 ) {
+						mouse0.x = mouse.x;
+						mouse0.y = mouse.y;
+						mouse0.t = Date.now();
+					}
+				}
+			}
+
+			function animate() {
+				requestAnimationFrame( animate );
+				render();
+			}
+
+			function apply_gravity(sprite) {
+					if (sprite.position.x > 0) sprite.velocity.x -= gravity.x;
+					if (sprite.position.x < 0) sprite.velocity.x += gravity.x;
+					if (sprite.position.y > 0) sprite.velocity.y -= gravity.y;
+					if (sprite.position.y < 0) sprite.velocity.y += gravity.y;
+			}
+
+			function apply_collide(sprite, index) {
+				for ( var i = index + 1, l = group.children.length; i < l; i ++ ) {
+				  var other = group.children[ i ];
+					var dx = other.position.x - sprite.position.x;
+					var dy = other.position.y - sprite.position.y;
+					var distance = Math.sqrt(dx*dx + dy*dy);
+					var minDist = other.radius + sprite.radius - 2;
+					
+					if (distance <= minDist) {
+						var targetX = sprite.position.x + dx * minDist / distance;
+						var targetY = sprite.position.y + dy * minDist / distance;
+						var ax = (targetX - other.position.x);
+						var ay = (targetY - other.position.y);
+						var m = sprite.radius * sprite.radius / 500;
+						var other_m = other.radius * other.radius / 500;
+
+						sprite.velocity.x -= ax/m;
+						sprite.velocity.y -= ay/m;
+						
+						other.velocity.x += ax/other_m;
+						other.velocity.y += ay/other_m;
+					}
+				}
+			}
+			
+			function apply_friction(sprite) {
+					sprite.velocity.x *= 0.92;
+					sprite.velocity.y *= 0.92;
+			}
+
+			function apply_force(sprite, fstart, fend) {
+				var fdx = fend.x - fstart.x;
+				var fdy = fend.y - fstart.y;
+				var dx = fend.x - sprite.position.x;
+				var dy = fend.y - sprite.position.y;
+				var distance = Math.sqrt(dx*dx + dy*dy);
+				if (distance <= 500) {
+					sprite.velocity.x += fdx/distance;
+					sprite.velocity.y += fdy/distance;
+				}
+			}
+
+			function render() {
+				var fstart, fend;
+				raycaster.setFromCamera( mouse0, camera );
+				var ib = raycaster.intersectObjects( [background] );
+				if (ib.length > 0 ) {
+					fstart = {x: ib[0].point.x, y: ib[0].point.y };
+				}
+				
+				raycaster.setFromCamera( mouse, camera );
+				var ib2 = raycaster.intersectObjects( [background] );
+				if (ib2.length > 0 ) {
+					fend = {x: ib2[0].point.x, y: ib2[0].point.y };
+				}
+				
+				for ( var i = 0, l = group.children.length; i < l; i ++ ) {
+					var sprite = group.children[ i ];
+
+					apply_gravity(sprite);
+					apply_collide(sprite, i);
+					apply_friction(sprite);
+					if (force) apply_force(sprite, fstart, fend);
+
+					sprite.position.x += sprite.velocity.x;
+					sprite.position.y += sprite.velocity.y;
+				}
+
+				if (!force) {
+					var intersects = raycaster.intersectObjects( group.children );
+
+					if ( intersects.length > 0 ) {
+						if ( INTERSECTED != intersects[ 0 ].object ) {
+							if ( INTERSECTED ) INTERSECTED.material.opacity = 1;
+							INTERSECTED = intersects[ 0 ].object;
+							INTERSECTED.material.opacity = 0.7;
+						}
+					} else {
+						if ( INTERSECTED ) INTERSECTED.material.opacity = 1;
+						INTERSECTED = null;
+					}
+				} else {
+					if ( INTERSECTED ) INTERSECTED.material.opacity = 1;
+					INTERSECTED = null;
+				}
+
+				renderer.render( scene, camera );
+			}
+
+		</script>
+	</body>
+</html>
